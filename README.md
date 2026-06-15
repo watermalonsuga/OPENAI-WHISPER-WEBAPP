@@ -1,12 +1,6 @@
-# openai-whisper-webapp
-Code for OpenAI Whisper Web App Demo
-
-<a target="_blank" href="https://colab.research.google.com/github/amrrs/openai-whisper-webapp/blob/main/OpenAI_Whisper_ASR_Demo.ipynb">
-  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
-</a>
-
-Credits: 
-
-* OpenAI Whisper https://github.com/openai/whisper
-
-![image](https://user-images.githubusercontent.com/5347322/191598847-c133d891-399c-4737-be08-18d21a27db95.png)
+Whisper Voice AI is a meeting recorder and transcription assistant built on the MERN stack with local AI. A Chrome extension captures both tab audio (from Google Meet or YouTube) and your microphone simultaneously, mixing them into a single audio stream using the Web Audio API.
+This audio is recorded in 10-second chunks and sent to a Python FastAPI service running OpenAI's Whisper model locally on CPU, which transcribes speech to text in near real-time.
+Transcribed segments are stored in MongoDB and pushed live to the React frontend via Socket.io, so users see a running transcript appear as the meeting happens.
+When a meeting ends, an Ollama-powered local LLM (Llama 3.2) generates a structured summary with key points and action items — entirely offline, with no paid API calls.
+The dashboard shows live stats (total, completed, and in-progress meetings), a meetings list with delete functionality, and individual meeting pages displaying the full transcript and AI summary, with a custom dark purple-pink themed UI matching a broader "MeetMind" design system.
+The whole thing runs on three local services (Whisper API, Node/Express backend, React frontend) plus Ollama, demonstrating an end-to-end privacy-friendly AI meeting assistant.
