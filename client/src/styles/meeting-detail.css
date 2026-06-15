@@ -1,0 +1,20 @@
+.meeting-detail {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.meeting-detail h1 {
+  font-size: 32px;
+  margin-bottom: 32px;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+.meeting-detail {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 80px 24px 48px;
+}
