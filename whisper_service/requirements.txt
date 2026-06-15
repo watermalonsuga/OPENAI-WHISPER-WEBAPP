@@ -2,4 +2,4 @@ fastapi
 uvicorn[standard]
 openai-whisper
 python-multipart
-torch==2.1.0
+torch
