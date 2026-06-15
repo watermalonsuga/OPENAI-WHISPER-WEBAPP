@@ -62,7 +62,8 @@ async function startRecording(streamId, recId) {
         }
     };
 
-    mediaRecorder.start(10000); // chunk every 10 seconds
+    // mediaRecorder.start(10000); // chunk every 10 seconds
+    mediaRecorder.start(300000);
 }
 
 async function uploadChunk(blob) {

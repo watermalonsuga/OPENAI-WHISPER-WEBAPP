@@ -94,7 +94,7 @@ router.post('/:id/chunk', upload.single('chunk'), async (req, res) => {
       // Emit to connected clients in this recording's room
       io.to(recordingId).emit('transcript-update', { text: result.text });
     }
-
+    console.log("TRANSCRIPT:", result.text);
     res.json({ text: result.text });
   } catch (err) {
     res.status(500).json({ error: err.message });
