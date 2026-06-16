@@ -6,19 +6,9 @@ import shutil, os, uuid
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+model = WhisperModel("small", device="cpu", compute_type="int8")
 
-model = WhisperModel(
-    "base",
-    device="cpu",
-    compute_type="int8"
-)
+# model = WhisperModel("base", device="cpu", compute_type="int8")
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
@@ -28,10 +18,7 @@ async def transcribe(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, f)
 
     try:
-        segments, info = model.transcribe(
-            temp_path,
-            beam_size=1
-        )
+        segments, info = model.transcribe(temp_path, beam_size=1, language="en")
 
         text = " ".join(
             segment.text for segment in segments

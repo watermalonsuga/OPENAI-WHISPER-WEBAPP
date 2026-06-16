@@ -34,10 +34,11 @@ router.get('/:id', async (req, res) => {
 // POST create new recording (when "Start Recording" is clicked)
 router.post('/', async (req, res) => {
   try {
-    const { title, userId } = req.body;
+    const { title, userId, source } = req.body;
     const recording = new Recording({
       title: title || 'Untitled Meeting',
       userId,
+      source: source || 'meeting',   // ← ADD THIS
       status: 'recording'
     });
     await recording.save();
@@ -133,5 +134,24 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ← PASTE STREAM ROUTE HERE (not at the top!)
+router.get('/:id/stream', async (req, res) => {
+  try {
+    const recording = await Recording.findById(req.params.id);
+    if (!recording || !recording.videoUrl) {
+      return res.status(404).json({ error: 'No recording file found' });
+    }
+    const { getRecordingStream } = require('../services/storageService');
+    const downloadStream = await getRecordingStream(recording.videoUrl);
+    res.setHeader('Content-Type', 'video/webm');
+    res.setHeader('Accept-Ranges', 'bytes');
+    downloadStream.on('error', () => res.status(404).json({ error: 'File not found' }));
+    downloadStream.pipe(res);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 module.exports = router;
