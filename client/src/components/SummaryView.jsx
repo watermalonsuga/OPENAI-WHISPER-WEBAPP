@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import axios from 'axios';
 
 function SummaryView({ recordingId }) {
@@ -6,77 +6,85 @@ function SummaryView({ recordingId }) {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(null);
+  const pollRef = useRef(null);
 
-  const fetchSummary = () => {
-    setLoading(true);
-    axios.get(`http://localhost:5000/api/summaries/${recordingId}`)
-      .then((res) => setSummary(res.data))
-      .catch(() => setSummary(null))
-      .finally(() => setLoading(false));
-  };
+  const fetchSummary = useCallback(async () => {
+    try {
+      const res = await axios.get(`http://localhost:5000/api/summaries/${recordingId}`);
+      setSummary(res.data);
+      clearInterval(pollRef.current);
+    } catch {
+      setSummary(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [recordingId]);
 
   useEffect(() => {
     fetchSummary();
-  }, [recordingId]);
+    pollRef.current = setInterval(fetchSummary, 8000);
+    return () => clearInterval(pollRef.current);
+  }, [fetchSummary]);
 
   const handleGenerate = async () => {
     setGenerating(true);
     setError(null);
     try {
-      const res = await axios.post(`http://localhost:5000/api/summaries/${recordingId}/generate`);
+      const res = await axios.post(
+        `http://localhost:5000/api/summaries/${recordingId}/generate`
+      );
       setSummary(res.data);
+      clearInterval(pollRef.current);
     } catch (err) {
-      console.error('Failed to generate summary:', err);
-      setError(err.response?.data?.error || 'Failed to generate summary');
+      setError(err.response?.data?.error || 'Failed to generate summary. Is there a transcript yet?');
     } finally {
       setGenerating(false);
     }
   };
 
-  if (loading) return <p>Loading summary...</p>;
+  if (loading) return <div className="summary-view"><p className="summary-loading">Loading summary…</p></div>;
 
   return (
     <div className="summary-view">
       <h3>Summary</h3>
 
-      {!summary && (
-        <div>
-          <p className="summary-empty">No summary available yet.</p>
-          <button className="btn-generate" onClick={handleGenerate} disabled={generating}>
-            {generating ? 'Regenerating...' : 'Regenerate summary'}
-          </button>
-        </div>
-      )}
       {error && <p className="summary-error">{error}</p>}
 
-      {summary && (
+      {!summary ? (
+        <div className="summary-empty-state">
+          <p className="summary-empty">No summary available yet.</p>
+          <button className="btn-generate" onClick={handleGenerate} disabled={generating}>
+            {generating ? 'Generating…' : '✦ Generate Summary'}
+          </button>
+        </div>
+      ) : (
         <>
-          <p>{summary.summary}</p>
+          <p className="summary-text">{summary.summary}</p>
 
           {summary.keyPoints?.length > 0 && (
-            <>
+            <div className="summary-section">
               <h4>Key Points</h4>
               <ul>
                 {summary.keyPoints.map((point, idx) => (
                   <li key={idx}>{point}</li>
                 ))}
               </ul>
-            </>
+            </div>
           )}
 
           {summary.actionItems?.length > 0 && (
-            <>
+            <div className="summary-section">
               <h4>Action Items</h4>
               <ul>
                 {summary.actionItems.map((item, idx) => (
                   <li key={idx}>{item}</li>
                 ))}
               </ul>
-            </>
+            </div>
           )}
 
           <button className="btn-generate" onClick={handleGenerate} disabled={generating}>
-            {generating ? 'Regenerating...' : 'Regenerate summary'}
+            {generating ? 'Regenerating…' : '↺ Regenerate Summary'}
           </button>
         </>
       )}

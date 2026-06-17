@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import RecordingControls from '../components/RecordingControls';
 import RecordingsList from '../components/RecordingsList';
+import '../styles/dashboard.css';
 
 function Dashboard() {
   const [stats, setStats] = useState({ total: 0, completed: 0, recording: 0 });
+  const [activeRecordingId, setActiveRecordingId] = useState(null);
 
-  useEffect(() => {
+  const fetchStats = () => {
     axios.get('http://localhost:5000/api/recordings')
       .then((res) => {
         const recs = res.data;
@@ -17,7 +19,18 @@ function Dashboard() {
         });
       })
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchStats();
   }, []);
+
+  // Called by RecordingControls whenever recording starts or stops
+  const handleRecordingChange = (isRecording, recordingId) => {
+    setActiveRecordingId(recordingId);
+    // Refresh stats after a short delay so backend has time to update
+    setTimeout(fetchStats, 1000);
+  };
 
   return (
     <div className="dashboard">
@@ -45,10 +58,11 @@ function Dashboard() {
         </div>
       </div>
 
-      <RecordingControls />
+      {/* ── Recording Controls — no extension needed ── */}
+      <RecordingControls onRecordingChange={handleRecordingChange} />
 
       <h2 className="dashboard-section-title">Your meetings</h2>
-      <RecordingsList />
+      <RecordingsList activeRecordingId={activeRecordingId} />
     </div>
   );
 }

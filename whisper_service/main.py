@@ -1,4 +1,4 @@
-import whisper
+from faster_whisper import WhisperModel
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,38 +6,35 @@ import shutil, os, uuid
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+model = WhisperModel("small", device="cpu", compute_type="int8")
 
-model = whisper.load_model("small")
-# model = whisper.load_model("tiny")
+# model = WhisperModel("base", device="cpu", compute_type="int8")
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
     temp_path = f"temp_{uuid.uuid4()}.wav"
+
     with open(temp_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
     try:
-        audio = whisper.load_audio(temp_path)
-        audio = whisper.pad_or_trim(audio)
-        mel = whisper.log_mel_spectrogram(audio).to(model.device)
+        segments, info = model.transcribe(temp_path, beam_size=1, language="en")
 
-        _, probs = model.detect_language(mel)
-        options = whisper.DecodingOptions(fp16=False)
-        result = whisper.decode(model, mel, options)
+        text = " ".join(
+            segment.text for segment in segments
+        )
 
         return JSONResponse({
-            "text": result.text,
-            "language": max(probs, key=probs.get)
+            "text": text,
+            "language": info.language
         })
+
     except Exception as e:
         print(f"Error processing audio: {e}")
-        return JSONResponse({"text": "", "language": "unknown"})
+        return JSONResponse({
+            "text": "",
+            "language": "unknown"
+        })
+
     finally:
         os.remove(temp_path)

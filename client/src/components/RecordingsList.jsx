@@ -3,6 +3,13 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import { Link } from 'react-router-dom';
 
+// Source icons & labels
+const SOURCE_CONFIG = {
+  meeting: { emoji: '🎯', label: 'Meeting' },
+  youtube: { emoji: '▶️', label: 'YouTube' },
+  voice:   { emoji: '🎙️', label: 'Voice Note' },
+};
+
 function RecordingsList() {
   const [recordings, setRecordings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,23 +24,10 @@ function RecordingsList() {
 
   useEffect(() => {
     fetchRecordings();
-
     const socket = io('http://localhost:5000');
-
-    socket.on('recording-created', (newRecording) => {
-      setRecordings((prev) => [newRecording, ...prev]);
-    });
-
-    socket.on('recording-updated', (updated) => {
-      setRecordings((prev) =>
-        prev.map((rec) => (rec._id === updated._id ? updated : rec))
-      );
-    });
-
-    socket.on('recording-deleted', (deletedId) => {
-      setRecordings((prev) => prev.filter((rec) => rec._id !== deletedId));
-    });
-
+    socket.on('recording-created', (newRecording) => setRecordings((prev) => [newRecording, ...prev]));
+    socket.on('recording-updated', (updated) => setRecordings((prev) => prev.map((rec) => rec._id === updated._id ? updated : rec)));
+    socket.on('recording-deleted', (deletedId) => setRecordings((prev) => prev.filter((rec) => rec._id !== deletedId)));
     return () => socket.disconnect();
   }, []);
 
@@ -55,26 +49,31 @@ function RecordingsList() {
     <div className="recordings-list">
       {recordings.length === 0 && <p>No recordings yet.</p>}
       <ul>
-        {recordings.map((rec) => (
-          <li key={rec._id} className="recording-item">
-            <Link to={`/meeting/${rec._id}`}>
-              <span className="rec-title">{rec.title || 'Untitled Meeting'}</span>
-              <span className="rec-date">{new Date(rec.createdAt).toLocaleString()}</span>
-              <span className={`rec-status status-${rec.status}`}>{rec.status}</span>
-              <button
-                className="btn-delete"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setDeleteTarget(rec._id);
-                }}
-                aria-label="Delete recording"
-              >
-                Delete
-              </button>
-            </Link>
-          </li>
-        ))}
+        {recordings.map((rec) => {
+          const src = SOURCE_CONFIG[rec.source] || SOURCE_CONFIG.meeting;
+          return (
+            <li key={rec._id} className="recording-item">
+              <Link to={`/meeting/${rec._id}`}>
+                {/* Source badge */}
+                <span className={`source-badge source-${rec.source || 'meeting'}`}>
+                  <span className="source-emoji">{src.emoji}</span>
+                  <span className="source-label">{src.label}</span>
+                </span>
+
+                <span className="rec-title">{rec.title || 'Untitled Meeting'}</span>
+                <span className="rec-date">{new Date(rec.createdAt).toLocaleString()}</span>
+                <span className={`rec-status status-${rec.status}`}>{rec.status}</span>
+                <button
+                  className="btn-delete"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(rec._id); }}
+                  aria-label="Delete recording"
+                >
+                  Delete
+                </button>
+              </Link>
+            </li>
+          );
+        })}
       </ul>
 
       {deleteTarget && (
@@ -83,12 +82,8 @@ function RecordingsList() {
             <h3>Delete meeting?</h3>
             <p>This will permanently remove the recording, transcript, and summary.</p>
             <div className="modal-actions">
-              <button className="btn-cancel" onClick={() => setDeleteTarget(null)}>
-                Cancel
-              </button>
-              <button className="btn-confirm-delete" onClick={confirmDelete}>
-                Delete
-              </button>
+              <button className="btn-cancel" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="btn-confirm-delete" onClick={confirmDelete}>Delete</button>
             </div>
           </div>
         </div>

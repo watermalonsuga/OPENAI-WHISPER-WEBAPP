@@ -3,11 +3,33 @@ const axios = require('axios');
 async function generateSummary(transcriptText) {
   const response = await axios.post('http://localhost:11434/api/generate', {
     model: 'llama3.2',
-    prompt: `You are summarizing a meeting transcript. Respond ONLY with valid JSON (no markdown, no code fences, no explanation) in this exact format:
+    prompt: `You are an advanced AI Meeting Assistant.
+
+Analyze the meeting transcript carefully and return ONLY valid JSON.
+
+The summary must:
+- Be detailed (6-10 sentences)
+- Mention the most important topics discussed
+- Mention conclusions reached
+- Mention concerns, challenges, or recommendations if present
+- Avoid generic statements
+- Use information directly from the transcript
+
+Return JSON in exactly this format:
+
 {
-  "summary": "a 2-3 sentence overview of the meeting",
-  "keyPoints": ["point 1", "point 2", "point 3"],
-  "actionItems": ["action 1", "action 2"]
+  "summary": "Detailed executive summary",
+  "keyPoints": [
+    "Important point 1",
+    "Important point 2",
+    "Important point 3",
+    "Important point 4",
+    "Important point 5"
+  ],
+  "actionItems": [
+    "Action item 1",
+    "Action item 2"
+  ]
 }
 
 Transcript:
