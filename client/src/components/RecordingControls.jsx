@@ -10,6 +10,26 @@ const SOURCE_OPTIONS = [
   { value: 'voice',   emoji: '🎙️', label: 'Voice Note' },
 ];
 
+// Opens stopper.html as a real popup window that stays on top
+function openFloatingStopWindow() {
+  const w = 280, h = 160;
+  const left = window.screen.width - w - 20;
+  const top  = 20;
+
+  const popup = window.open(
+    '/stopper.html',
+    'StopRecording',
+    `width=${w},height=${h},left=${left},top=${top},resizable=no,toolbar=no,menubar=no,scrollbars=no,status=no,location=no`
+  );
+
+  if (!popup) {
+    alert('Please allow popups for localhost:3000 — click the popup blocked icon in your address bar!');
+    return null;
+  }
+
+  return popup;
+}
+
 function RecordingControls({ onRecordingChange }) {
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState('idle');
@@ -18,16 +38,29 @@ function RecordingControls({ onRecordingChange }) {
   const [source, setSource] = useState('meeting');
 
   const mediaRecorderRef = useRef(null);
-  const recordingIdRef = useRef(null);
-  const timerRef = useRef(null);
-  const streamRef = useRef(null);
-  const chunkBufferRef = useRef([]);
-  const mimeTypeRef = useRef('video/webm');
+  const recordingIdRef   = useRef(null);
+  const timerRef         = useRef(null);
+  const streamRef        = useRef(null);
+  const chunkBufferRef   = useRef([]);
+  const mimeTypeRef      = useRef('video/webm');
+  const popupRef         = useRef(null);
+
+  // Listen for stop message from popup
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === 'STOP_RECORDING_FROM_POPUP') {
+        stopRecording();
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (isRecording) {
       setDuration(0);
-      timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
+      timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
     } else {
       clearInterval(timerRef.current);
       setDuration(0);
@@ -41,52 +74,27 @@ function RecordingControls({ onRecordingChange }) {
     return `${m}:${s}`;
   };
 
-  const sendChunk = async () => {
-    if (chunkBufferRef.current.length === 0) return;
-    if (!recordingIdRef.current) return;
-    const blobs = chunkBufferRef.current.splice(0);
-    const chunkBlob = new Blob(blobs, { type: mimeTypeRef.current });
-    if (chunkBlob.size < 500) return;
-
-    // Send to /chunk for transcription (audio extracted server-side by whisper)
-    const formData = new FormData();
-    formData.append('chunk', chunkBlob, `chunk_${Date.now()}.webm`);
-    try {
-      await axios.post(
-        `${SERVER_URL}/api/recordings/${recordingIdRef.current}/chunk`,
-        formData,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
-      );
-    } catch (err) {
-      console.warn('Chunk upload failed:', err.message);
-    }
-  };
-
   const startRecording = async () => {
     setErrorMsg('');
     setStatus('requesting');
     try {
-      // 1. Microphone
       let micStream;
       try {
         micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       } catch {
-        throw new Error('Microphone access denied. Please allow microphone access and try again.');
+        throw new Error('Microphone access denied.');
       }
 
-      // 2. Screen/tab capture — keep VIDEO track this time!
       let displayStream = null;
       try {
         displayStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: 30 },   // keep video for recording
+          video: { frameRate: 30 },
           audio: { echoCancellation: false, noiseSuppression: false }
         });
-        // DO NOT stop video tracks — we need them for the recording
       } catch {
-        console.log('No screen capture — mic only, no video.');
+        console.log('No screen capture — mic only.');
       }
 
-      // 3. Mix audio streams
       const audioCtx = new AudioContext();
       const audioDestination = audioCtx.createMediaStreamDestination();
       audioCtx.createMediaStreamSource(micStream).connect(audioDestination);
@@ -94,7 +102,6 @@ function RecordingControls({ onRecordingChange }) {
         audioCtx.createMediaStreamSource(displayStream).connect(audioDestination);
       }
 
-      // 4. Combine: video from displayStream + mixed audio
       const videoTracks = displayStream?.getVideoTracks() || [];
       const combinedStream = new MediaStream([
         ...videoTracks,
@@ -103,16 +110,13 @@ function RecordingControls({ onRecordingChange }) {
 
       streamRef.current = { micStream, displayStream, audioCtx };
 
-      // 5. Create recording on backend
       const res = await axios.post(`${SERVER_URL}/api/recordings`, {
         title: `Meeting – ${new Date().toLocaleString()}`,
         userId: '123',
         source
       });
       recordingIdRef.current = res.data._id;
-      console.log('Recording created:', recordingIdRef.current);
 
-      // 6. Pick best supported mimeType (video/webm with codecs)
       const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
         ? 'video/webm;codecs=vp9,opus'
         : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
@@ -128,26 +132,22 @@ function RecordingControls({ onRecordingChange }) {
       chunkBufferRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          chunkBufferRef.current.push(e.data);
-        }
+        if (e.data && e.data.size > 0) chunkBufferRef.current.push(e.data);
       };
 
-      // If screen share stops early (user clicks "Stop sharing"), auto-stop recording
       if (displayStream) {
         displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
-          if (isRecording || mediaRecorderRef.current?.state !== 'inactive') {
-            stopRecording();
-          }
+          if (mediaRecorderRef.current?.state !== 'inactive') stopRecording();
         });
       }
 
       mediaRecorder.start();
-      console.log('Recording started with mimeType:', mimeType);
-
       setIsRecording(true);
       setStatus('recording');
       if (onRecordingChange) onRecordingChange(true, recordingIdRef.current);
+
+      // Open floating stop popup
+      popupRef.current = openFloatingStopWindow();
 
     } catch (err) {
       setStatus('error');
@@ -158,31 +158,35 @@ function RecordingControls({ onRecordingChange }) {
 
   const stopAllTracks = () => {
     if (streamRef.current) {
-      streamRef.current.micStream?.getTracks().forEach((t) => t.stop());
-      streamRef.current.displayStream?.getTracks().forEach((t) => t.stop());
+      streamRef.current.micStream?.getTracks().forEach(t => t.stop());
+      streamRef.current.displayStream?.getTracks().forEach(t => t.stop());
       streamRef.current.audioCtx?.close().catch(() => {});
       streamRef.current = null;
     }
   };
 
   const stopRecording = async () => {
-    if (status === 'stopping') return; // prevent double-call
+    if (status === 'stopping' || !mediaRecorderRef.current) return;
     setStatus('stopping');
+
+    if (popupRef.current && !popupRef.current.closed) {
+      popupRef.current.close();
+      popupRef.current = null;
+    }
 
     const recorder = mediaRecorderRef.current;
     const id = recordingIdRef.current;
 
     if (recorder && recorder.state !== 'inactive') {
       recorder.requestData();
-      await new Promise((resolve) => { recorder.onstop = resolve; recorder.stop(); });
+      await new Promise(resolve => { recorder.onstop = resolve; recorder.stop(); });
     }
 
     stopAllTracks();
 
-    // Upload full video blob
     if (chunkBufferRef.current.length > 0 && id) {
       const fullBlob = new Blob(chunkBufferRef.current, { type: mimeTypeRef.current });
-      console.log(`Uploading full recording: ${(fullBlob.size / 1024 / 1024).toFixed(2)} MB`);
+      console.log(`Uploading: ${(fullBlob.size / 1024 / 1024).toFixed(2)} MB`);
 
       const formData = new FormData();
       formData.append('recording', fullBlob, `${id}.webm`);
@@ -190,30 +194,22 @@ function RecordingControls({ onRecordingChange }) {
         await axios.post(`${SERVER_URL}/api/recordings/${id}/upload`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
-        console.log('Video uploaded successfully');
-      } catch (err) {
-        console.warn('Video upload failed:', err.message);
-      }
+      } catch (err) { console.warn('Upload failed:', err.message); }
 
-      // Also send for transcription
       const audioFormData = new FormData();
       audioFormData.append('chunk', fullBlob, `chunk_${Date.now()}.webm`);
       try {
         await axios.post(`${SERVER_URL}/api/recordings/${id}/chunk`, audioFormData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
-      } catch (err) {
-        console.warn('Transcription failed:', err.message);
-      }
+      } catch (err) { console.warn('Transcription failed:', err.message); }
     }
 
     if (id) {
       try {
         await axios.put(`${SERVER_URL}/api/recordings/${id}/status`, { status: 'completed' });
         await axios.post(`${SERVER_URL}/api/summaries/${id}/generate`);
-      } catch (err) {
-        console.warn('Finalize failed:', err.message);
-      }
+      } catch (err) { console.warn('Finalize failed:', err.message); }
     }
 
     mediaRecorderRef.current = null;
@@ -232,7 +228,7 @@ function RecordingControls({ onRecordingChange }) {
         <div className="source-selector">
           <p className="source-label-text">What are you recording?</p>
           <div className="source-options">
-            {SOURCE_OPTIONS.map((opt) => (
+            {SOURCE_OPTIONS.map(opt => (
               <button
                 key={opt.value}
                 className={`source-option ${source === opt.value ? 'active' : ''}`}
@@ -272,16 +268,21 @@ function RecordingControls({ onRecordingChange }) {
           onClick={stopRecording}
           disabled={!isRecording || status === 'stopping'}
         >
-          {status === 'stopping' ? 'Uploading video…' : '■ Stop Recording'}
+          {status === 'stopping' ? 'Uploading…' : '■ Stop Recording'}
         </button>
       </div>
 
       {status === 'requesting' && (
-        <p className="recording-hint">Allow microphone access, then select the tab you want to record.</p>
+        <p className="recording-hint">Allow mic access, then select the tab to record.</p>
+      )}
+      {isRecording && (
+        <p className="recording-hint">
+          🪟 Use the floating <strong>Stop</strong> window to stop from any tab!
+        </p>
       )}
       {!isRecording && status === 'idle' && (
         <p className="recording-hint">
-          Click <strong>Start Recording</strong> — select a browser tab to capture its video and audio.
+          Click <strong>Start Recording</strong> — a floating stop button will appear so you can stop from any tab.
         </p>
       )}
       {status === 'stopping' && (
