@@ -6,9 +6,13 @@ import shutil, os, uuid
 
 app = FastAPI()
 
-model = WhisperModel("small", device="cpu", compute_type="int8")
-
-# model = WhisperModel("base", device="cpu", compute_type="int8")
+# model = WhisperModel("small", device="cpu", compute_type="int8")// Works perfectly (USE THIS)
+# model = WhisperModel("base", device="cpu", compute_type="int8") //Works but slighlt wrong words
+model = WhisperModel(
+    "large-v3",
+    device="cpu",
+    compute_type="int8"
+)
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
@@ -18,7 +22,14 @@ async def transcribe(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, f)
 
     try:
-        segments, info = model.transcribe(temp_path, beam_size=1, language="en")
+        # segments, info = model.transcribe(temp_path, beam_size=1, language="en") //For Enlish only (USE THIS)
+        # segments, info = model.transcribe(temp_path, beam_size=1) //only worked for eng and hindi
+        segments, info = model.transcribe(
+    temp_path,
+    beam_size=5,
+    vad_filter=True
+)
+        
 
         text = " ".join(
             segment.text for segment in segments
