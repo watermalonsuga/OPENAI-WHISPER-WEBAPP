@@ -1,11 +1,40 @@
-const axios = require('axios');
+const Groq = require("groq-sdk");
 
-async function generateSummary(transcriptText) {
-  const response = await axios.post('http://localhost:11434/api/generate', {
-    model: 'llama3.2',
-    prompt: `You are an advanced AI Meeting Assistant.
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
+
+const LANG_INSTRUCTIONS = {
+  english: "Write the entire JSON output (summary, keyPoints, actionItems) in English.",
+  hindi: "Write the entire JSON output (summary, keyPoints, actionItems) in Hindi (Devanagari script).",
+  bengali: "Write the entire JSON output (summary, keyPoints, actionItems) in Bengali (Bangla script)."
+};
+
+// Strip ```json ... ``` or ``` ... ``` fences some models wrap around output.
+// Seen most often on Bengali output, but applied generically since it can
+// happen for any language.
+function stripCodeFence(text) {
+  if (!text) return text;
+  const trimmed = text.trim();
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenceMatch ? fenceMatch[1].trim() : trimmed;
+}
+
+async function generateSummary(transcriptText, language = "english") {
+  const langInstruction = LANG_INSTRUCTIONS[language] || LANG_INSTRUCTIONS.english;
+
+  const completion = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    temperature: 0.3,
+    messages: [
+      {
+        role: "user",
+        content: `You are an advanced AI Meeting Assistant.
 
 Analyze the meeting transcript carefully and return ONLY valid JSON.
+Do not wrap the JSON in markdown code fences or backticks. Return raw JSON only.
+
+${langInstruction}
 
 The summary must:
 - Be detailed (6-10 sentences)
@@ -34,21 +63,22 @@ Return JSON in exactly this format:
 
 Transcript:
 ${transcriptText}`,
-    stream: false,
-    format: 'json'
+      },
+    ],
   });
 
-  const text = response.data.response;
-  const clean = text.replace(/```json|```/g, '').trim();
+  const raw = completion.choices[0].message.content;
+  const text = stripCodeFence(raw);
 
   try {
-    return JSON.parse(clean);
+    return JSON.parse(text);
   } catch (err) {
-    console.error('Failed to parse LLM response:', text);
+    console.error("Failed to parse Groq response:", raw);
+
     return {
-      summary: 'Summary generation failed - could not parse response',
+      summary: text,
       keyPoints: [],
-      actionItems: []
+      actionItems: [],
     };
   }
 }

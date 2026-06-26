@@ -5,6 +5,8 @@ const Transcript = require('../models/Transcript');
 const Recording = require('../models/Recording');
 const { generateSummary } = require('../services/llmService');
 
+const VALID_LANGS = ['english', 'hindi', 'bengali'];
+
 // GET summary by recording ID
 router.get('/:recordingId', async (req, res) => {
   try {
@@ -40,6 +42,8 @@ function generateSmartTitle(result) {
 
 router.post('/:recordingId/generate', async (req, res) => {
   try {
+    const language = VALID_LANGS.includes(req.body?.language) ? req.body.language : 'english';
+
     console.log('Step 1: Looking up transcript');
     const transcript = await Transcript.findOne({ recordingId: req.params.recordingId });
 
@@ -49,27 +53,44 @@ router.post('/:recordingId/generate', async (req, res) => {
     }
 
     console.log('Step 2: Transcript found, length:', transcript.fullText.length);
-    console.log('Step 3: Calling Ollama...');
+    console.log('Step 3: Calling Groq for language:', language);
 
-    const result = await generateSummary(transcript.fullText);
+    const result = await generateSummary(transcript.fullText, language);
 
-    console.log('Step 4: Ollama responded:', result);
+    console.log('Step 4: Groq responded:', result);
 
     // Save summary
     let summary = await Summary.findOne({ recordingId: req.params.recordingId });
     if (!summary) {
       summary = new Summary({ recordingId: req.params.recordingId });
     }
-    summary.summary = result.summary;
-    summary.keyPoints = result.keyPoints || [];
-    summary.actionItems = result.actionItems || [];
-    await summary.save();
-    console.log('Step 5: Saved summary');
+    if (!summary.summaries) summary.summaries = {};
 
-    // ── Auto-rename the recording based on summary content ──────────────────
-    const smartTitle = generateSmartTitle(result);
-    await Recording.findByIdAndUpdate(req.params.recordingId, { title: smartTitle });
-    console.log('Step 6: Recording renamed to:', smartTitle);
+    // write into per-language slot only — sibling languages untouched
+    summary.summaries[language] = {
+      summary: result.summary,
+      keyPoints: result.keyPoints || [],
+      actionItems: result.actionItems || [],
+      generatedAt: new Date()
+    };
+
+    // keep legacy top-level fields in sync for English only (back-compat for old frontend code paths)
+    if (language === 'english') {
+      summary.summary = result.summary;
+      summary.keyPoints = result.keyPoints || [];
+      summary.actionItems = result.actionItems || [];
+    }
+
+    summary.markModified('summaries');
+    await summary.save();
+    console.log('Step 5: Saved summary for', language);
+
+    // ── Auto-rename the recording based on summary content (English only) ──
+    if (language === 'english') {
+      const smartTitle = generateSmartTitle(result);
+      await Recording.findByIdAndUpdate(req.params.recordingId, { title: smartTitle });
+      console.log('Step 6: Recording renamed to:', smartTitle);
+    }
 
     res.json(summary);
   } catch (err) {
