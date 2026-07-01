@@ -14,6 +14,7 @@ function MeetingDetail() {
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [summaryError, setSummaryError] = useState('');
+  const [language, setLanguage] = useState('english'); // NEW
 
   // Fetch recording info
   useEffect(() => {
@@ -48,12 +49,24 @@ function MeetingDetail() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const handleGenerate = async () => {
+  // language -> data, with fallback to legacy top-level fields (old docs, english only)
+  const getLangData = (lang) => {
+    if (summary?.summaries?.[lang]) return summary.summaries[lang];
+    if (lang === 'english' && summary?.summary) {
+      return { summary: summary.summary, keyPoints: summary.keyPoints, actionItems: summary.actionItems };
+    }
+    return null;
+  };
+
+  const currentData = getLangData(language);
+
+  const handleGenerate = async (lang) => {
     setGenerating(true);
     setSummaryError('');
     try {
-      const res = await axios.post(`${SERVER_URL}/api/summaries/${id}/generate`);
+      const res = await axios.post(`${SERVER_URL}/api/summaries/${id}/generate`, { language: lang });
       setSummary(res.data);
+      setLanguage(lang);
     } catch (err) {
       setSummaryError(err.response?.data?.error || 'Failed to generate summary.');
     } finally { setGenerating(false); }
@@ -64,6 +77,12 @@ function MeetingDetail() {
     { key: 'summary',    label: 'Summary',         emoji: '🧠' },
     { key: 'keypoints',  label: 'Key Points',      emoji: '🎯' },
     { key: 'actions',    label: 'Action Items',    emoji: '✅' },
+  ];
+
+  const LANGS = [
+    { key: 'english', label: 'English' },
+    { key: 'hindi', label: 'Hindi' },
+    { key: 'bengali', label: 'Bengali' },
   ];
 
   const hasVideo = recording?.videoUrl;
@@ -120,35 +139,83 @@ function MeetingDetail() {
           {activeTab === 'summary' && (
             <div className="md-panel">
               <h2 className="md-panel-title">Summary</h2>
+
+              {/* NEW: language switcher tabs */}
+              <div className="md-lang-switch" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                {LANGS.map(l => (
+                  <button
+                    key={l.key}
+                    onClick={() => setLanguage(l.key)}
+                    className={`md-lang-btn ${language === l.key ? 'active' : ''}`}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 8,
+                      border: language === l.key ? '1px solid #d946ef' : '1px solid #333',
+                      background: language === l.key ? 'rgba(217,70,239,0.15)' : 'transparent',
+                      color: '#fff',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {l.label}{getLangData(l.key) ? ' ✓' : ''}
+                  </button>
+                ))}
+              </div>
+
               {summaryLoading
                 ? <p className="md-placeholder">Loading…</p>
                 : summaryError
                   ? <p className="md-error">{summaryError}</p>
-                  : !summary
+                  : !currentData
                     ? <div>
-                        <p className="md-placeholder">No summary yet.</p>
-                        <button className="md-btn-generate" onClick={handleGenerate} disabled={generating}>
-                          {generating ? 'Generating…' : '✦ Generate Summary'}
+                        <p className="md-placeholder">No {LANGS.find(l=>l.key===language)?.label} summary yet.</p>
+                        <button
+                          className="md-btn-generate"
+                          onClick={() => handleGenerate(language)}
+                          disabled={generating}
+                        >
+                          {generating ? 'Generating…' : `✦ Generate ${LANGS.find(l=>l.key===language)?.label} Summary`}
                         </button>
                       </div>
                     : <div>
-                        <p className="md-summary-text">{summary.summary}</p>
-                        <button className="md-btn-generate" onClick={handleGenerate} disabled={generating} style={{marginTop:16}}>
-                          {generating ? 'Regenerating…' : '↺ Regenerate'}
+                        <p className="md-summary-text">{currentData.summary}</p>
+                        <button
+                          className="md-btn-generate"
+                          onClick={() => handleGenerate(language)}
+                          disabled={generating}
+                          style={{marginTop:16}}
+                        >
+                          {generating ? 'Regenerating…' : `↺ Regenerate ${LANGS.find(l=>l.key===language)?.label}`}
                         </button>
                       </div>
               }
+
+              {/* generate-all-three row */}
+              {!summaryLoading && !summaryError && (
+                <div style={{ marginTop: 24, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {LANGS.map(l => (
+                    <button
+                      key={l.key}
+                      className="md-btn-generate"
+                      onClick={() => handleGenerate(l.key)}
+                      disabled={generating}
+                      style={{ opacity: language === l.key ? 1 : 0.7 }}
+                    >
+                      {generating && language === l.key ? '...' : `Generate ${l.label} Summary`}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'keypoints' && (
             <div className="md-panel">
               <h2 className="md-panel-title">Key Points</h2>
-              {!summary
-                ? <p className="md-placeholder">Generate a summary first to see key points.</p>
-                : summary.keyPoints?.length > 0
+              {!currentData
+                ? <p className="md-placeholder">Generate a {LANGS.find(l=>l.key===language)?.label} summary first to see key points.</p>
+                : currentData.keyPoints?.length > 0
                   ? <ul className="md-list">
-                      {summary.keyPoints.map((pt, i) => <li key={i}>{pt}</li>)}
+                      {currentData.keyPoints.map((pt, i) => <li key={i}>{pt}</li>)}
                     </ul>
                   : <p className="md-placeholder">No key points available.</p>
               }
@@ -158,11 +225,11 @@ function MeetingDetail() {
           {activeTab === 'actions' && (
             <div className="md-panel">
               <h2 className="md-panel-title">Action Items</h2>
-              {!summary
-                ? <p className="md-placeholder">Generate a summary first to see action items.</p>
-                : summary.actionItems?.length > 0
+              {!currentData
+                ? <p className="md-placeholder">Generate a {LANGS.find(l=>l.key===language)?.label} summary first to see action items.</p>
+                : currentData.actionItems?.length > 0
                   ? <ul className="md-list md-list--actions">
-                      {summary.actionItems.map((item, i) => <li key={i}>{item}</li>)}
+                      {currentData.actionItems.map((item, i) => <li key={i}>{item}</li>)}
                     </ul>
                   : <p className="md-placeholder">No action items found.</p>
               }
